@@ -1,59 +1,66 @@
 async function api(url){
-  let r = await fetch(url);
-  return await r.json();
+  let res = await fetch(url);
+  return await res.json();
 }
 
 async function loadList(){
   let master = document.getElementById("master").value.trim();
-  if(!master) return;
+  if(!master){
+    document.getElementById("list").innerHTML = "Chưa có key";
+    return;
+  }
 
-  let data = await api("api.php?action=list&master="+encodeURIComponent(master));
+  let data = await api("api.php?action=list&master=" + encodeURIComponent(master));
+
   if(data.status !== "ok"){
-    document.getElementById("list").innerHTML = "<div style='opacity:.5;text-align:center'>Sai master key</div>";
+    document.getElementById("list").innerHTML = "Sai master key!";
+    return;
+  }
+
+  let keys = data.keys || [];
+  if(keys.length === 0){
+    document.getElementById("list").innerHTML = "Chưa có key";
     return;
   }
 
   let html = "";
-  data.keys.forEach(k=>{
+  for(let k of keys){
     html += `
-      <div class="keyitem">
+      <div class="row">
         <div class="k">${k.key}</div>
-        <div class="meta">Hết hạn: ${k.expire}</div>
-        <div class="meta">IP: ${k.ip}</div>
-        <div class="del" onclick="delKey('${k.key}')">XÓA</div>
+        <div class="e">${k.expire}</div>
       </div>
     `;
-  });
-
-  document.getElementById("list").innerHTML = html || "<div style='opacity:.5;text-align:center'>Chưa có key</div>";
+  }
+  document.getElementById("list").innerHTML = html;
 }
 
 async function createKey(){
   let master = document.getElementById("master").value.trim();
   let expire = document.getElementById("expire").value;
+  let custom = document.getElementById("custom").value.trim();
 
   if(!master) return alert("Nhập master key!");
   if(!expire) return alert("Chọn hạn!");
+  if(!custom) return alert("Nhập key muốn tạo!");
 
-  let data = await api("api.php?action=create&master="+encodeURIComponent(master)+"&expire="+encodeURIComponent(expire));
-  if(data.status !== "ok") return alert("Sai master key!");
+  let data = await api(
+    "api.php?action=create&master=" + encodeURIComponent(master) +
+    "&expire=" + encodeURIComponent(expire) +
+    "&custom=" + encodeURIComponent(custom)
+  );
 
+  if(data.status !== "ok"){
+    if(data.status === "error") return alert(data.msg || "Lỗi!");
+    if(data.status === "exists") return alert("Key đã tồn tại!");
+    return alert("Sai master key!");
+  }
+
+  document.getElementById("custom").value = "";
   await loadList();
-  alert("Tạo key thành công: "+data.new.key);
+  alert("Tạo key thành công: " + data.new.key);
 }
 
-async function delKey(key){
-  let master = document.getElementById("master").value.trim();
-  if(!master) return alert("Nhập master key!");
-
-  let ok = confirm("Xóa key: "+key+" ?");
-  if(!ok) return;
-
-  await api("api.php?action=delete&master="+encodeURIComponent(master)+"&key="+encodeURIComponent(key));
-  await loadList();
-}
-
-document.getElementById("master").addEventListener("input", ()=>{
-  clearTimeout(window.t);
-  window.t = setTimeout(loadList, 400);
+document.getElementById("master").addEventListener("input", function(){
+  loadList();
 });
