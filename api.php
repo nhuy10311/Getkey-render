@@ -46,20 +46,35 @@ if ($action === "list") {
 }
 
 if ($action === "create") {
+
     $master = $_GET["master"] ?? "";
     $expire = $_GET["expire"] ?? "";
+    $custom = strtoupper(trim($_GET["custom"] ?? ""));
+
     if ($master !== $db["master_key"]) {
         echo json_encode(["status"=>"no"]);
         exit;
     }
 
     if (!$expire) {
-        echo json_encode(["status"=>"error","msg"=>"missing expire"]);
+        echo json_encode(["status"=>"error","msg"=>"Thiếu expire"]);
         exit;
     }
 
+    if ($custom == "") {
+        echo json_encode(["status"=>"error","msg"=>"Chưa nhập key"]);
+        exit;
+    }
+
+    foreach ($db["keys"] as $k) {
+        if ($k["key"] === $custom) {
+            echo json_encode(["status"=>"error","msg"=>"Key đã tồn tại"]);
+            exit;
+        }
+    }
+
     $new = [
-        "key" => random_key(10),
+        "key" => $custom,
         "expire" => $expire,
         "ip" => "Trống",
         "created" => date("Y-m-d")
@@ -70,6 +85,7 @@ if ($action === "create") {
 
     echo json_encode(["status"=>"ok", "new"=>$new]);
     exit;
+}
 }
 
 if ($action === "delete") {
