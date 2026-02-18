@@ -1,44 +1,93 @@
-<?php ?>
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NHUY VIP - GETKEY</title>
+<?php
+$MASTER_KEY = "nhuy103"; // đổi master key của m
 
-  <link rel="stylesheet" href="style.css" />
-</head>
+$dbFile = "keys.json";
+$scriptFile = "menu.lua"; // file chứa code menu lua
 
-<body>
-  <div class="wrap">
-    <div class="card">
-      <div class="logo">
-        <img src="logo.png" alt="Nhuy" />
-      </div>
+// tạo db nếu chưa có
+if (!file_exists($dbFile)) {
+    file_put_contents($dbFile, json_encode([]));
+}
 
-      <h1 class="title">NHUY VIP</h1>
-      <div class="sub">AUTOWALK SYSTEM ACTIVE</div>
+$keys = json_decode(file_get_contents($dbFile), true);
+if (!is_array($keys)) $keys = [];
 
-      <input id="master" class="input" placeholder="Nhập master key..." />
-      
-      <select id="expire" class="input">
-        <option value="1 ngày">1 ngày</option>
-        <option value="3 ngày">3 ngày</option>
-        <option value="7 ngày">7 ngày</option>
-        <option value="30 ngày">30 ngày</option>
-      </select>
+// random key
+function genKey($len = 20) {
+    $chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    $out = "";
+    for ($i=0; $i<$len; $i++) {
+        $out .= $chars[random_int(0, strlen($chars)-1)];
+    }
+    return $out;
+}
 
-      <input id="custom" class="input" placeholder="Nhập key muốn tạo (VD: NHUYVIP123)" />
+function saveKeys($dbFile, $keys) {
+    file_put_contents($dbFile, json_encode($keys, JSON_PRETTY_PRINT));
+}
 
-      <button class="btn" onclick="createKey()">TẠO KEY MỚI</button>
+/* =========================
+   1) CREATE KEY (ADMIN)
+   ========================= */
+if (isset($_GET["create_key"])) {
+    header("Content-Type: application/json; charset=UTF-8");
 
-      <div class="note" id="msg"></div>
+    $master = $_GET["master"] ?? "";
+    if ($master !== $MASTER_KEY) {
+        echo json_encode(["status"=>"error","msg"=>"MASTER sai"]);
+        exit;
+    }
 
-      <div class="list-title">BẢNG KEY</div>
-      <div id="list" class="list">Chưa có key</div>
-    </div>
-  </div>
+    $newKey = genKey();
 
-  <script src="script.js"></script>
-</body>
-</html>
+    $keys[$newKey] = [
+        "created" => time(),
+        "used" => false
+    ];
+
+    saveKeys($dbFile, $keys);
+
+    echo json_encode(["status"=>"success","key"=>$newKey]);
+    exit;
+}
+
+/* =========================
+   2) GET SCRIPT BY KEY
+   ========================= */
+if (isset($_GET["get_script"])) {
+    header("Content-Type: text/plain; charset=UTF-8");
+
+    $key = strtoupper(trim($_GET["key"] ?? ""));
+
+    if ($key === "" || !isset($keys[$key])) {
+        echo "KEY_INVALID";
+        exit;
+    }
+
+    // nếu muốn key dùng 1 lần thì bật cái này:
+    // $keys[$key]["used"] = true;
+    // saveKeys($dbFile, $keys);
+
+    // nếu chưa có file menu.lua thì báo lỗi
+    if (!file_exists($scriptFile)) {
+        echo "-- SCRIPT_NOT_FOUND";
+        exit;
+    }
+
+    // trả code lua
+    echo file_get_contents($scriptFile);
+    exit;
+}
+
+/* =========================
+   DEFAULT
+   ========================= */
+header("Content-Type: application/json; charset=UTF-8");
+echo json_encode([
+    "status" => "ok",
+    "msg" => "API online",
+    "how_to" => [
+        "create_key" => "/index.php?create_key=1&master=123456",
+        "get_script" => "/index.php?get_script=1&key=ABC123"
+    ]
+]);
