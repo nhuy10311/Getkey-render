@@ -3,8 +3,13 @@ async function api(url){
   return await res.json();
 }
 
+function setMsg(text){
+  document.getElementById("msg").innerText = text || "";
+}
+
 async function loadList(){
   let master = document.getElementById("master").value.trim();
+
   if(!master){
     document.getElementById("list").innerHTML = "Chưa có key";
     return;
@@ -13,7 +18,7 @@ async function loadList(){
   let data = await api("api.php?action=list&master=" + encodeURIComponent(master));
 
   if(data.status !== "ok"){
-    document.getElementById("list").innerHTML = "Sai master key!";
+    document.getElementById("list").innerHTML = "Sai master key hoặc không có quyền.";
     return;
   }
 
@@ -32,17 +37,20 @@ async function loadList(){
       </div>
     `;
   }
+
   document.getElementById("list").innerHTML = html;
 }
 
 async function createKey(){
   let master = document.getElementById("master").value.trim();
-  let expire = document.getElementById("expire").value;
+  let expire = document.getElementById("expire").value.trim();
   let custom = document.getElementById("custom").value.trim();
 
-  if(!master) return alert("Nhập master key!");
-  if(!expire) return alert("Chọn hạn!");
-  if(!custom) return alert("Nhập key muốn tạo!");
+  if(!master) return setMsg("Nhập master key!");
+  if(!expire) return setMsg("Chọn hạn!");
+  if(!custom) return setMsg("Nhập key muốn tạo!");
+
+  setMsg("Đang tạo key...");
 
   let data = await api(
     "api.php?action=create&master=" + encodeURIComponent(master) +
@@ -51,14 +59,15 @@ async function createKey(){
   );
 
   if(data.status !== "ok"){
-    if(data.status === "error") return alert(data.msg || "Lỗi!");
-    if(data.status === "exists") return alert("Key đã tồn tại!");
-    return alert("Sai master key!");
+    if(data.status === "error") return setMsg(data.msg || "Lỗi!");
+    if(data.status === "exists") return setMsg("Key đã tồn tại!");
+    return setMsg("Sai master key!");
   }
 
   document.getElementById("custom").value = "";
+  setMsg("Tạo key thành công: " + data.new.key);
+
   await loadList();
-  alert("Tạo key thành công: " + data.new.key);
 }
 
 document.getElementById("master").addEventListener("input", function(){
