@@ -1,76 +1,32 @@
-<?php
-header("Content-Type: text/plain; charset=utf-8");
-
-$db_file = __DIR__ . "/db.json";
-if (!file_exists($db_file)) {
-    echo "AUTH_ERR|Missing db.json";
-    exit;
-}
-
-$db = json_decode(file_get_contents($db_file), true);
-if (!$db) {
-    echo "AUTH_ERR|db.json lỗi";
-    exit;
-}
-
-$key = $_GET["check_key"] ?? "";
-$key = trim($key);
-
-if ($key === "") {
-    echo "AUTH_ERR|Thiếu key";
-    exit;
-}
-
-$found = null;
-
-if (!isset($db["keys"]) || !is_array($db["keys"])) {
-    echo "AUTH_ERR|Database lỗi (keys)";
-    exit;
-}
-
-foreach ($db["keys"] as $k) {
-    if (isset($k["key"]) && $k["key"] === $key) {
-        $found = $k;
-        break;
-    }
-}
-
-if (!$found) {
-    echo "AUTH_ERR|Key không tồn tại";
-    exit;
-}
-
-$expire = $found["expire"] ?? "";
-if ($expire !== "") {
-    $today = date("Y-m-d");
-    if ($today > $expire) {
-        echo "AUTH_ERR|Key hết hạn";
-        exit;
-    }
-}
-
-/*
-  =========================
-  TRẢ VỀ MENU SCRIPT LUA
-  =========================
-*/
-
-$lua = <<<'LUA'
--- [[ 🛡️ TRỌN BỘ SCRIPT AUTOWALK CHUẨN BOSS KN ]]
 script_name("AutoWalk AutoY")
 script_author("KN_BOSS")
 
 require "lib.moonloader"
 local imgui = require "mimgui"
 local json = require "dkjson"
+local http = require("socket.http")
+local ffi = require("ffi")
 
+-- ====== API CHECK KEY (PHP Render) ======
+local API = "https://TENRENDER.onrender.com/api.php?check_key="
+
+-- ====== CONFIG ======
 local config_path = getWorkingDirectory() .. "\\config\\AutoWalk_KN.json"
-local spamTime = 1500 
-local show = imgui.new.bool(true)
+local spamTime = 1500
+
+-- ====== UI ======
+local showLogin = imgui.new.bool(true)
+local showMenu  = imgui.new.bool(false)
+
+local keyInput = imgui.new.char[128]("")
+local statusText = "Nhap key de vao menu..."
+
+-- ====== AUTOWALK ======
 local running = false
 local points = {}
 local idx = 1
 
+-- ====== SAVE/LOAD ======
 function saveConfig()
     if not doesDirectoryExist(getWorkingDirectory() .. "\\config") then
         createDirectory(getWorkingDirectory() .. "\\config")
@@ -93,6 +49,7 @@ function loadConfig()
     end
 end
 
+-- ====== SEND Y ======
 function sendY()
     local pId = select(2, sampGetPlayerIdByCharHandle(PLAYER_PED))
     local m = allocateMemory(68)
@@ -116,8 +73,67 @@ local function walk(p)
     end
 end
 
-imgui.OnFrame(function() return show[0] end, function()
-    imgui.Begin("AutoWalk AutoY - BOSS KN", show)
+-- ====== CHECK KEY ======
+local function checkKey(key)
+    local url = API .. key
+    local body, code = http.request(url)
+
+    if not body then
+        return false, "Loi ket noi API!"
+    end
+
+    if tostring(body):find("AUTH_OK") then
+        return true, "Login thanh cong!"
+    end
+
+    return false, "Sai key!"
+end
+
+-- ====== LOGIN UI ======
+imgui.OnFrame(function() return showLogin[0] end, function()
+    imgui.Begin("LOGIN KEY - BOSS KN", showLogin)
+
+    imgui.Text("Nhap key de vao menu AutoWalk")
+    imgui.InputText("KEY", keyInput, 128)
+    imgui.Separator()
+
+    if imgui.Button("LOGIN") then
+        local k = ffi.string(keyInput)
+
+        if k == "" then
+            statusText = "Chua nhap key!"
+        else
+            statusText = "Dang check key..."
+            lua_thread.create(function()
+                local ok, msg = checkKey(k)
+
+                if ok then
+                    statusText = msg
+                    wait(200)
+
+                    -- ====== ĐÂY NÈ: LOGIN OK -> HIỆN MENU ======
+                    showLogin[0] = false
+                    showMenu[0] = true
+
+                    sampAddChatMessage("{00ff88}[KN]: {ffffff}Login thanh cong! Menu da bat.", -1)
+                else
+                    statusText = msg
+                    sampAddChatMessage("{ff4444}[KN]: {ffffff}"..msg, -1)
+                end
+            end)
+        end
+    end
+
+    imgui.Separator()
+    imgui.Text(statusText)
+
+    imgui.End()
+end)
+
+-- ====== MENU AUTOWALK UI ======
+imgui.OnFrame(function() return showMenu[0] end, function()
+    imgui.Begin("AutoWalk AutoY - BOSS KN", showMenu)
+
     imgui.Text("Points: "..#points)
     imgui.Text("Current: "..idx)
     imgui.Text(running and "STATUS: RUNNING" or "STATUS: STOPPED")
@@ -127,7 +143,9 @@ imgui.OnFrame(function() return show[0] end, function()
     end
 
     if imgui.Button("START") then
-        if #points>0 then running, idx = true, 1 end
+        if #points>0 then
+            running, idx = true, 1
+        end
     end
 
     if imgui.Button("STOP") then
@@ -141,22 +159,30 @@ imgui.OnFrame(function() return show[0] end, function()
 
     imgui.Separator()
 
-    if imgui.Button("SAVE CONFIG") then
-        saveConfig()
-    end
+    if imgui.Button("SAVE CONFIG") then saveConfig() end
     imgui.SameLine()
-    if imgui.Button("LOAD CONFIG") then
-        loadConfig()
-    end
+    if imgui.Button("LOAD CONFIG") then loadConfig() end
 
     imgui.End()
 end)
 
 function main()
     repeat wait(0) until isSampAvailable()
+
     loadConfig()
-    show[0] = true
-    sampRegisterChatCommand("awui", function() show[0]=not show[0] end)
+
+    -- mở login trước
+    showLogin[0] = true
+    showMenu[0] = false
+
+    -- lệnh bật/tắt UI
+    sampRegisterChatCommand("awui", function()
+        if showMenu[0] then
+            showMenu[0] = not showMenu[0]
+        else
+            showLogin[0] = not showLogin[0]
+        end
+    end)
 
     while true do
         wait(0)
@@ -174,7 +200,3 @@ function main()
 end
 
 lua_thread.create(main)
-LUA;
-
-echo "AUTH_SUCCESS|" . $lua;
-exit;
