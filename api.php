@@ -1,85 +1,74 @@
 <?php
-header("Content-Type: application/json; charset=utf-8");
+header("Content-Type: text/plain; charset=UTF-8");
 
-$db_file = __DIR__ . "/db.json";
-$db = json_decode(file_get_contents($db_file), true);
+$MASTER_KEY = "123456";
+$dbFile = "keys.json";
+$scriptFile = "menu.lua";
 
-function save_db($db_file, $db){
-  file_put_contents($db_file, json_encode($db, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
+if (!file_exists($dbFile)) {
+    file_put_contents($dbFile, json_encode([]));
 }
 
-$action = $_GET["action"] ?? "";
+$keys = json_decode(file_get_contents($dbFile), true);
+if (!is_array($keys)) $keys = [];
 
-/* CHECK KEY (tool dùng) */
-if($action === "check"){
-  $key = $_GET["key"] ?? "";
-  $ip = $_SERVER["REMOTE_ADDR"];
+function saveKeys($dbFile, $keys) {
+    file_put_contents($dbFile, json_encode($keys, JSON_PRETTY_PRINT));
+}
 
-  foreach($db["keys"] as $k){
-    if($k["key"] === $key){
-      echo json_encode(["status"=>"ok", "expire"=>$k["expire"]]);
-      exit;
+function genKey($len = 20) {
+    $chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    $out = "";
+    for ($i=0; $i<$len; $i++) {
+        $out .= $chars[random_int(0, strlen($chars)-1)];
     }
-  }
-
-  echo json_encode(["status"=>"invalid"]);
-  exit;
+    return $out;
 }
 
-/* LIST KEY */
-if($action === "list"){
-  $master = $_GET["master"] ?? "";
+if (isset($_POST["action"]) && $_POST["action"] === "create") {
+    $master = $_POST["master"] ?? "";
 
-  if($master !== $db["master_key"]){
-    echo json_encode(["status"=>"no"]);
-    exit;
-  }
-
-  echo json_encode(["status"=>"ok", "keys"=>$db["keys"]]);
-  exit;
-}
-
-/* CREATE KEY (tự nhập custom) */
-if($action === "create"){
-
-  $master = $_GET["master"] ?? "";
-  $expire = $_GET["expire"] ?? "";
-  $custom = strtoupper(trim($_GET["custom"] ?? ""));
-
-  if($master !== $db["master_key"]){
-    echo json_encode(["status"=>"no"]);
-    exit;
-  }
-
-  if(!$expire){
-    echo json_encode(["status"=>"error","msg"=>"Thiếu expire"]);
-    exit;
-  }
-
-  if($custom === ""){
-    echo json_encode(["status"=>"error","msg"=>"Chưa nhập key"]);
-    exit;
-  }
-
-  foreach($db["keys"] as $k){
-    if($k["key"] === $custom){
-      echo json_encode(["status"=>"exists"]);
-      exit;
+    if ($master !== $MASTER_KEY) {
+        echo "AUTH_ERR|MASTER_INVALID";
+        exit;
     }
-  }
 
-  $new = [
-    "key" => $custom,
-    "expire" => $expire,
-    "ip" => "Trống",
-    "created" => date("Y-m-d")
-  ];
+    $newKey = genKey();
 
-  array_unshift($db["keys"], $new);
-  save_db($db_file, $db);
+    $keys[$newKey] = [
+        "created" => time(),
+        "used" => false
+    ];
 
-  echo json_encode(["status"=>"ok", "new"=>$new]);
-  exit;
+    saveKeys($dbFile, $keys);
+
+    echo "AUTH_SUCCESS|NEW_KEY=" . $newKey;
+    exit;
 }
 
-echo json_encode(["status"=>"error","msg"=>"Sai action"]);
+if (isset($_GET["check_key"])) {
+
+    $key = strtoupper(trim($_GET["check_key"] ?? ""));
+
+    if ($key === "") {
+        echo "AUTH_ERR|EMPTY_KEY";
+        exit;
+    }
+
+    if (!isset($keys[$key])) {
+        echo "AUTH_ERR|KEY_INVALID";
+        exit;
+    }
+
+    if (!file_exists($scriptFile)) {
+        echo "AUTH_ERR|SCRIPT_NOT_FOUND";
+        exit;
+    }
+
+    $luaCode = file_get_contents($scriptFile);
+
+    echo "AUTH_SUCCESS|" . $luaCode;
+    exit;
+}
+
+echo "AUTH_ERR|NO_ACTION";
